@@ -15,6 +15,9 @@ var vectaInitCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Establish the Vecta Security Enclave with Host-GW Networking",
 	Run: func(cmd *cobra.Command, args []string) {
+		// FORCE all sub-processes to use the K3s system config
+		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
+
 		// If you do not see "V3" in your terminal, the binary is OLD.
 		fmt.Println("🛡️  VECTA BOOTSTRAP V3 (FORCED STABILITY)")
 
@@ -100,14 +103,33 @@ var vectaInitCmd = &cobra.Command{
 }
 
 func syncKubeconfig() {
-	home, _ := os.UserHomeDir()
-	kubeDir := home + "/.kube"
-	os.MkdirAll(kubeDir, 0755)
-	exec.Command("sudo", "cp", "/etc/rancher/k3s/k3s.yaml", kubeDir+"/config").Run()
-	uid := os.Getuid()
-	gid := os.Getgid()
-	exec.Command("sudo", "chown", fmt.Sprintf("%d:%d", uid, gid), kubeDir+"/config").Run()
-	os.Chmod(kubeDir+"/config", 0600)
+	// 1. Identify the real user behind sudo
+	targetUser := os.Getenv("SUDO_USER")
+	if targetUser == "" {
+		targetUser = os.Getenv("USER")
+	}
+
+	// 2. Build the correct home directory path
+	// Avoid os.UserHomeDir() here because it returns /root under sudo
+	homeDir := "/home/" + targetUser
+	if targetUser == "root" {
+		homeDir = "/root"
+	}
+
+	kubeDir := homeDir + "/.kube"
+	configPath := kubeDir + "/config"
+
+	fmt.Printf("🔐 Syncing Kubeconfig for user: %s\n", targetUser)
+
+	// 3. Create directory
+	_ = exec.Command("sudo", "mkdir", "-p", kubeDir).Run()
+
+	// 4. Copy the fresh K3s config
+	_ = exec.Command("sudo", "cp", "/etc/rancher/k3s/k3s.yaml", configPath).Run()
+
+	// 5. Fix ownership using the string name (cleaner for Go/Sudo interactions)
+	_ = exec.Command("sudo", "chown", "-R", targetUser+":"+targetUser, kubeDir).Run()
+	_ = exec.Command("sudo", "chmod", "600", configPath).Run()
 }
 
 func runShell(command string) error {
