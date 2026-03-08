@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/asubra-ms/vecta/internal/test" // Ensure this matches your go.mod module name
+	"vecta/internal/test" // Ensure this matches your go.mod module name
 	"github.com/spf13/cobra"
 )
 

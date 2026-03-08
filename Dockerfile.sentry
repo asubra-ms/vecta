@@ -1,0 +1,6 @@
+FROM alpine:latest
+#RUN apk add --no-cache ca-certificates
+COPY bin/sentry-warden /usr/local/bin/sentry-warden
+EXPOSE 8000
+ENTRYPOINT ["/usr/local/bin/sentry-warden"]
+

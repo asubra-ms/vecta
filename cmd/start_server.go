@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/asubra-ms/vecta/internal/api" // Adjust this to your actual internal path
+	"vecta/internal/api" // Adjust this to your actual internal path
 	"github.com/spf13/cobra"
 	"os"
 )

@@ -11,22 +11,37 @@ package identity
 
 import (
 	"fmt"
-	// SPIRE API Go clients go here
+	"os/exec"
+	"strings"
 )
 
+// RegisterEnclaveIdentity creates a SPIFFE entry for a specific enclave tenant.
 func RegisterEnclaveIdentity(tenantID string, namespace string) error {
-	fmt.Printf("🪪 Registering SPIFFE ID for Tenant: %s\n", tenantID)
-
-	// In a real implementation, this uses the SPIRE Server Entry API
-	// The SPIFFE ID will look like: spiffe://vecta.io/tenant/<tenantID>/agent
-
+	spiffeID := fmt.Sprintf("spiffe://vecta.io/enclave/%s", tenantID)
 	parentID := "spiffe://vecta.io/ns/spire/sa/spire-agent"
-	newID := fmt.Sprintf("spiffe://vecta.io/tenant/%s/agent", tenantID)
-
 	selector := fmt.Sprintf("k8s:ns:%s", namespace)
 
-	// Logic to call SPIRE gRPC Server...
-	// exec.Command("spire-server", "entry", "create", "-parentID", parentID, ...)
+	fmt.Printf("🛡️  Establishing Identity: %s\n", spiffeID)
 
+	// We use 'kubectl exec' to reach the server.
+	// The '-i' flag is omitted for non-interactive automation.
+	cmd := exec.Command("kubectl", "exec", "-n", "spire", "spire-server-0", "--",
+		"/opt/spire/bin/spire-server", "entry", "create",
+		"-parentID", parentID,
+		"-spiffeID", spiffeID,
+		"-selector", selector)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		outputStr := string(out)
+		// Idempotency: If already exists, we are good.
+		if strings.Contains(outputStr, "already exists") {
+			fmt.Println("ℹ️  Identity already exists. Skipping.")
+			return nil
+		}
+		return fmt.Errorf("SPIRE registration error: %s", outputStr)
+	}
+
+	fmt.Println("✅ Identity Registered.")
 	return nil
 }

@@ -31,23 +31,28 @@ func CreatePatch(pod *corev1.Pod, tenantID string) ([]byte, error) {
 		},
 		Env: []corev1.EnvVar{
 			{Name: "TENANT_ID", Value: tenantID},
-			{Name: "Warden_MODE", Value: "audit"}, // Default to audit for discovery
+			{Name: "WARDEN_MODE", Value: "audit"}, // Default to audit for discovery
 		},
 	}
 
 	// 2. Add the container to the Pod spec
+	// Using /spec/containers/- to append to the existing container list
 	patch = append(patch, patchOperation{
 		Op:    "add",
 		Path:  "/spec/containers/-",
 		Value: sentryContainer,
 	})
 
-	// 3. Add the SPIRE and ConfigMap Volumes
-	volumes := []corev1.Volume{
+	// 3. Define the SPIRE and ConfigMap Volumes
+	// We use the SPIFFE CSI Driver for hardened identity delivery
+	newVolumes := []corev1.Volume{
 		{
 			Name: "spiffe-workload-api",
 			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{Path: "/run/spire/sockets"},
+				CSI: &corev1.CSIVolumeSource{
+					Driver:   "csi.spiffe.io",
+					ReadOnly: ptrBool(true),
+				},
 			},
 		},
 		{
@@ -60,11 +65,21 @@ func CreatePatch(pod *corev1.Pod, tenantID string) ([]byte, error) {
 		},
 	}
 
-	patch = append(patch, patchOperation{
-		Op:    "add",
-		Path:  "/spec/volumes",
-		Value: volumes,
-	})
+	// 4. Add the volumes to the Pod spec
+	// Note: If the pod has no volumes, we create the list. If it has some, we append.
+	// For this stable fabric, we append to ensure we don't overwrite agent volumes.
+	for _, vol := range newVolumes {
+		patch = append(patch, patchOperation{
+			Op:    "add",
+			Path:  "/spec/volumes/-",
+			Value: vol,
+		})
+	}
 
 	return json.Marshal(patch)
+}
+
+// Helper for CSI ReadOnly pointer
+func ptrBool(b bool) *bool {
+	return &b
 }

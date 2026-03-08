@@ -58,6 +58,17 @@ var resetCmd = &cobra.Command{
 		exec.Command("iptables", "-F").Run()
 		exec.Command("iptables", "-t", "nat", "-F").Run()
 
+		// --- NEW HARDENING STEPS ---
+
+		// 6. Remove Local Docker Registry
+		fmt.Println("📦 Removing Vecta local registry...")
+		exec.Command("docker", "stop", "vecta-registry").Run()
+		exec.Command("docker", "rm", "-v", "vecta-registry").Run() // -v removes the registry volume too
+
+		// 7. Cleanup SPIRE sockets (Identity Layer)
+		fmt.Println("🪪 Purging identity sockets...")
+		exec.Command("rm", "-rf", "/run/spire").Run()
+
 		fmt.Println("\n✨ Host is now clean. You can run 'vecta init' to start fresh.")
 	},
 }
@@ -85,4 +96,11 @@ func unmountKubelet() {
 			}
 		}
 	}
+}
+
+func cleanupRegistry() error {
+	fmt.Println("   - Removing Vecta local registry...")
+	// We use 'docker stop' and 'docker rm'
+	exec.Command("docker", "stop", "vecta-registry").Run()
+	return exec.Command("docker", "rm", "vecta-registry").Run()
 }

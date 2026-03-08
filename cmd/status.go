@@ -3,42 +3,64 @@ package cmd
 import (
 	"fmt"
 	"os/exec"
+	"strings"
+
 	"github.com/spf13/cobra"
 )
 
-var statusCmd = &cobra.Command{
+var statusTenant string
+
+var vectaStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show tenant vCluster status and pod placement",
+	Short: "Check the health of GPU, Identity, and Enclave layers",
 	Run: func(cmd *cobra.Command, args []string) {
-		tenant, _ := cmd.Flags().GetString("tenant")
-		fmt.Printf("📊 Vecta Status for Tenant: %s\n", tenant)
+		fmt.Printf("📊 Vecta Suite: Status for Tenant [%s]\n", statusTenant)
+		fmt.Println(strings.Repeat("-", 45))
 
-		kEnv := "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && "
-		
-		// 1. Check vCluster logical status
-		fmt.Printf("--- vCluster Control Plane: ")
-		err := exec.Command("sh", "-c", "/usr/local/bin/vcluster list | grep "+tenant).Run()
+		// 1. GPU Health (NVIDIA RTX 6000 check)
+		fmt.Print("🖥️  GPU (RTX 6000): ")
+		gpu, err := exec.Command("nvidia-smi", "--query-gpu=utilization.gpu,memory.used,temperature.gpu", "--format=csv,noheader").Output()
 		if err != nil {
-			fmt.Println("❌ NOT FOUND")
-			return
+			fmt.Println("❌ Driver Error or No GPU Found")
+		} else {
+			fmt.Printf("Online [%s]\n", strings.TrimSpace(string(gpu)))
 		}
-		fmt.Println("✅ ONLINE")
 
-		// 2. Show physical pod landing (Host View)
-		fmt.Println("\n--- Physical Placement (Host Node View):")
-		out, _ := exec.Command("sh", "-c", kEnv+"/usr/local/bin/k3s kubectl get pods -n vcluster-"+tenant).Output()
-		fmt.Println(string(out))
+		// 2. Control Plane (K3s check)
+		fmt.Print("☸️  Control Plane: ")
+		k3s := exec.Command("/usr/local/bin/k3s", "kubectl", "get", "nodes")
+		if err := k3s.Run(); err == nil {
+			fmt.Println("✅ Healthy")
+		} else {
+			fmt.Println("❌ API Unreachable (Check sudo journalctl -u k3s)")
+		}
 
-		// 3. Show logical pod landing (Inside vCluster View)
-		fmt.Println("--- Logical Placement (Inside vCluster):")
-		vCmd := fmt.Sprintf("/usr/local/bin/vcluster connect %s --namespace vcluster-%s -- /usr/local/bin/k3s kubectl get pods", tenant, tenant)
-		vOut, _ := exec.Command("sh", "-c", kEnv+vCmd).Output()
-		fmt.Println(string(vOut))
+		// 3. Identity (SPIRE check)
+		fmt.Print("🪪  Identity (SPIRE): ")
+		spire := exec.Command("/usr/local/bin/k3s", "kubectl", "get", "pods", "-n", "spire", "-l", "app.kubernetes.io/name=spire-server")
+		if out, _ := spire.Output(); strings.Contains(string(out), "Running") {
+			fmt.Println("✅ Issuing SVIDs")
+		} else {
+			fmt.Println("⏳ Starting/Missing")
+		}
+
+		// 4. Enclave Density (Filtered by Tenant Namespace)
+		namespace := "vcluster-" + statusTenant
+		fmt.Printf("🛡️  Active Agents [%s]: ", namespace)
+
+		agents, _ := exec.Command("/usr/local/bin/k3s", "kubectl", "get", "pods", "-n", namespace, "--no-headers", "-l", "vecta.io/tenant="+statusTenant).Output()
+
+		lines := strings.Split(strings.TrimSpace(string(agents)), "\n")
+		count := 0
+		if len(lines) > 0 && lines[0] != "" {
+			count = len(lines)
+		}
+		fmt.Printf("%d agents detected\n", count)
 	},
 }
 
 func init() {
-	statusCmd.Flags().StringP("tenant", "t", "default-enclave", "Tenant name to check")
-	rootCmd.AddCommand(statusCmd)
+	// Added the flag exactly as requested
+	vectaStatusCmd.Flags().StringVarP(&statusTenant, "tenant", "t", "agent-enclave", "Tenant name to check")
+	rootCmd.AddCommand(vectaStatusCmd)
 }
-

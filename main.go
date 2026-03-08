@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/asubra-ms/vecta/cmd"
+	"vecta/cmd"
 )
 
 func main() {
