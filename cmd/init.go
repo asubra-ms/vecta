@@ -121,11 +121,6 @@ func waitForSpireSovereignty() {
 	os.Exit(1)
 }
 
-func init() {
-	vectaInitCmd.Flags().BoolVarP(&forceInit, "force", "f", false, "Force a nuclear scrub before initialization")
-	rootCmd.AddCommand(vectaInitCmd)
-}
-
 func runShell(command string) error {
 	c := exec.Command("sh", "-c", command)
 	c.Stdout = os.Stdout
@@ -135,8 +130,25 @@ func runShell(command string) error {
 
 func nukeExistingState() {
 	fmt.Println("🧨 Nuclear Scrub: Purging SPIRE and K3s data...")
-	_ = runShell("sudo rm -rf /run/spire/* /var/lib/rancher/k3s/storage/*")
-	_ = runShell("kubectl delete namespace spire vcluster-agent-enclave --ignore-not-found")
+
+	// 1. Run the official K3s uninstall script to clear iptables and network interfaces
+	fmt.Println("   Stopping K3s and clearing network stacks...")
+	_ = runShell("sudo k3s-uninstall.sh || true")
+	_ = runShell("sudo pkill -9 k3s || true")
+
+	// 2. Force delete the namespaces in the background
+	_ = runShell("kubectl delete namespace spire vcluster-agent-enclave --ignore-not-found --grace-period=0 --force &")
+
+	// 3. Unmount stuck storage and clear the specialized Vecta directories
+	_ = runShell("sudo umount -l /var/lib/rancher/k3s/projected || true")
+	_ = runShell("sudo umount -l /run/spire || true")
+
+	// 4. The "Hammer": Wipe data and the K3s state db
+	// Added /etc/rancher/k3s to ensure PKI/Certificates are regenerated
+	fmt.Println("   Wiping persistent state from disk...")
+	_ = runShell("sudo rm -rf /run/spire/* /var/lib/rancher/k3s/* /var/lib/spire/* /etc/rancher/k3s/*")
+
+	fmt.Println("✅ Scrub complete. Proceeding to fresh install...")
 }
 
 func initializeVectaWorkspace() {

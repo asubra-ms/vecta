@@ -6,10 +6,19 @@ metadata:
 data:
   server.conf: |
     server {
+      bind_address = "0.0.0.0"
+      bind_port = "8081"
       trust_domain = "vecta.io"
       data_dir = "/run/spire/data"
       log_level = "DEBUG"
+      ca_key_type = "rsa-2048"
+      # ADD THIS LINE: Explicitly defines the CA identity for the Sovereign Root
+      ca_subject = {
+        country = ["US"],
+        organization = ["Vecta"],
+        common_name = "vecta.io",
     }
+
     plugins {
       DataStore "sql" {
         plugin_data {
@@ -17,6 +26,18 @@ data:
           connection_string = "/run/spire/data/spire.db"
         }
       }
+
+      NodeAttestor "k8s_psat" {
+        plugin_data {
+          clusters = {
+            # Changed to "default" to match the K3s standard cluster name
+            "default" = {
+              service_account_allow_list = ["spire:spire-agent"]
+            }
+          }
+        }
+      }
+
       KeyManager "memory" {}
     }
 

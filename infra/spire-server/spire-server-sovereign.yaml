@@ -4,19 +4,30 @@ metadata:
   name: spire-server
   namespace: spire
 spec:
+  selector:
+    matchLabels:
+      app: spire-server
+  serviceName: spire-server
+  replicas: 1
   template:
+    metadata:
+      labels:
+        app: spire-server
     spec:
+      # Ensure the pod has permission to write to volumes
+      securityContext:
+        fsGroup: 1000
       containers:
       - name: spire-server
-        image: vecta/spire-server:clean # Our custom-built clean image
+        image: vecta/spire-server:clean
         imagePullPolicy: IfNotPresent
         command: ["/opt/spire/bin/spire-server"]
         args:
           - "run"
           - "-config"
           - "/run/spire/config/server.conf"
-          - "-trustDomain"
-          - "vecta.io"
+        ports:
+          - containerPort: 8081
         volumeMounts:
           - name: spire-config
             mountPath: /run/spire/config
@@ -27,4 +38,6 @@ spec:
         - name: spire-config
           configMap:
             name: spire-server-forced
+        - name: spire-data
+          emptyDir: {}
 
