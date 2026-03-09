@@ -1,0 +1,45 @@
+mkdir -p ~/src/vecta/infra/spire-server
+cd ~/src/vecta/infra/spire-server
+
+cat <<EOF > Dockerfile
+# Stage 1: Grab the official binaries
+FROM ghcr.io/spiffe/spire-server:1.8.1 AS source
+
+# Stage 2: Build the clean production image
+FROM alpine:3.18
+
+# Create the spire user/group
+RUN addgroup -S spire && adduser -S spire -G spire
+
+# Install necessary tools
+RUN apk add --no-cache ca-certificates openssl bash
+
+# Create directories
+RUN mkdir -p /opt/spire/bin /run/spire/data /run/spire/config /var/lib/spire \\
+    && chown -R spire:spire /opt/spire /run/spire /var/lib/spire
+
+# Copy the server binary
+COPY --from=source /opt/spire/bin/spire-server /opt/spire/bin/spire-server
+
+USER spire
+WORKDIR /opt/spire
+
+ENTRYPOINT ["/opt/spire/bin/spire-server", "run", "-config", "/run/spire/config/server.conf"]
+EOF
+
+docker build -t vecta/spire-server:clean .
+
+# in the dir where you create the Dockerfile run the cmd
+docker save vecta/spire-server:clean | sudo k3s ctr images import -
+
+# Check that the cluster now recognizes your custom image
+sudo k3s crictl images | grep vecta/spire-server
+
+
+# Wait for 30 s
+
+sleep 30
+
+kubectl exec -n spire spire-server-0 -c spire-server -- /opt/spire/bin/spire-server bundle show -format spiffe | jq -r '.keys[0].x5c[0]' | base64 -d | openssl x509 -noout -subject -serial
+
+

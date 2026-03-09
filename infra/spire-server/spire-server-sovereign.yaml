@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spire-server
+  namespace: spire
+spec:
+  template:
+    spec:
+      containers:
+      - name: spire-server
+        image: vecta/spire-server:clean # Our custom-built clean image
+        imagePullPolicy: IfNotPresent
+        command: ["/opt/spire/bin/spire-server"]
+        args:
+          - "run"
+          - "-config"
+          - "/run/spire/config/server.conf"
+          - "-trustDomain"
+          - "vecta.io"
+        volumeMounts:
+          - name: spire-config
+            mountPath: /run/spire/config
+            readOnly: true
+          - name: spire-data
+            mountPath: /run/spire/data
+      volumes:
+        - name: spire-config
+          configMap:
+            name: spire-server-forced
+

@@ -1,7 +1,5 @@
-// The Mutation Logic: Generates the RFC 6902 JSON Patch to modify the customer's pod on the fly
-// This is the "logic-core" for the vecta wrap cmd's promise. It intercepts any pod creation in
-// the vecta managed namespace and injects the vecta-sentry container into it.
-// We implement this as a Sidecar automator
+// The Mutation Logic: Generates the RFC 6902 JSON Patch to modify the customer's pod on the fly.
+// Updated for Vecta V3: Uses HostPath mounts for policy enforcement and intent discovery.
 
 package webhook
 
@@ -21,30 +19,33 @@ func CreatePatch(pod *corev1.Pod, tenantID string) ([]byte, error) {
 	var patch []patchOperation
 
 	// 1. Define the Vecta-Sentry Sidecar Container
+	// Updated to use the /var/vecta production paths
 	sentryContainer := corev1.Container{
-		Name:  "vecta-sentry",
-		Image: "localhost:5000/vecta-sentry:latest", // Pulls from local registry
+		Name:  "sentry-warden",
+		Image: "localhost:5000/vecta-sentry:latest",
 		Ports: []corev1.ContainerPort{{ContainerPort: 8000}},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "spiffe-workload-api", MountPath: "/run/spire/sockets", ReadOnly: true},
-			{Name: "enclave-config", MountPath: "/etc/vecta"},
+			{Name: "policy-vol", MountPath: "/var/vecta/policy", ReadOnly: true},
+			{Name: "lib-vol", MountPath: "/var/vecta/lib"},
 		},
 		Env: []corev1.EnvVar{
 			{Name: "TENANT_ID", Value: tenantID},
-			{Name: "WARDEN_MODE", Value: "audit"}, // Default to audit for discovery
+			// The Warden reads VECTA_AUDIT_TIME or the policy.yaml file directly
 		},
 	}
 
-	// 2. Add the container to the Pod spec
-	// Using /spec/containers/- to append to the existing container list
+	// 2. Inject the Warden Sidecar
 	patch = append(patch, patchOperation{
 		Op:    "add",
 		Path:  "/spec/containers/-",
 		Value: sentryContainer,
 	})
 
-	// 3. Define the SPIRE and ConfigMap Volumes
-	// We use the SPIFFE CSI Driver for hardened identity delivery
+	// 3. Define the Production-Grade Volumes
+	// - SPIFFE CSI: For Identity
+	// - HostPath (Policy): For Read-Only Governance
+	// - HostPath (Lib): For Persisting Discovered Intent
 	newVolumes := []corev1.Volume{
 		{
 			Name: "spiffe-workload-api",
@@ -56,18 +57,24 @@ func CreatePatch(pod *corev1.Pod, tenantID string) ([]byte, error) {
 			},
 		},
 		{
-			Name: "enclave-config",
+			Name: "policy-vol",
 			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{Name: "enclave-manifest"},
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/var/vecta/policy",
+				},
+			},
+		},
+		{
+			Name: "lib-vol",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/var/vecta/lib",
 				},
 			},
 		},
 	}
 
-	// 4. Add the volumes to the Pod spec
-	// Note: If the pod has no volumes, we create the list. If it has some, we append.
-	// For this stable fabric, we append to ensure we don't overwrite agent volumes.
+	// 4. Inject Volumes into the Pod spec
 	for _, vol := range newVolumes {
 		patch = append(patch, patchOperation{
 			Op:    "add",

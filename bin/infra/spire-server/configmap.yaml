@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-server-forced
+  namespace: spire
+data:
+  server.conf: |
+    server {
+      trust_domain = "vecta.io"
+      data_dir = "/run/spire/data"
+      log_level = "DEBUG"
+    }
+    plugins {
+      DataStore "sql" {
+        plugin_data {
+          database_type = "sqlite3"
+          connection_string = "/run/spire/data/spire.db"
+        }
+      }
+      KeyManager "memory" {}
+    }
+
