@@ -17,7 +17,8 @@ data:
         country = ["US"],
         organization = ["Vecta"],
         common_name = "vecta.io",
-    }
+      } # Added missing closing brace for ca_subject
+    } # Added missing closing brace for server block
 
     plugins {
       DataStore "sql" {

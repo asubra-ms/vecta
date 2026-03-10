@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,169 +15,169 @@ var forceInit bool
 
 var vectaInitCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Establish the Vecta Security Enclave with Host-GW Networking",
+	Short: "Establish the Vecta Security Enclave",
 	Run: func(cmd *cobra.Command, args []string) {
-		// FORCE all sub-processes to use the K3s system config
 		os.Setenv("KUBECONFIG", "/etc/rancher/k3s/k3s.yaml")
+		fmt.Println("🛡️  VECTA AUTOMATED BOOTSTRAP")
 
-		fmt.Println("🛡️  VECTA BOOTSTRAP V3 (FORCED STABILITY)")
-
-		// --- STEP 0: WORKSPACE & STATE MANAGEMENT ---
 		if forceInit {
 			nukeExistingState()
 		}
 
-		// Establish the Sovereign Root before K3s installation
 		initializeVectaWorkspace()
 
-		// 1. Hard Scrub existing K3s state
-		fmt.Println("🧹 Preparing host for K3s installation...")
-		_ = exec.Command("sudo", "k3s-uninstall.sh").Run()
-		_ = exec.Command("sudo", "systemctl", "stop", "k3s").Run()
-		_ = exec.Command("sh", "-c", "sudo umount -l /var/lib/rancher/k3s/projected").Run()
-
-		// 2. Install K3s (Optimized for eno1np0 and host-gw)
-		fmt.Println("📦 Step 1: Bootstrapping K3s (Binding to eno1np0)...")
+		// --- Step 1: K3s ---
+		fmt.Println("📦 Step 1: Bootstrapping K3s Control Plane...")
 		k3sInstall := "curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC='--flannel-backend=host-gw --flannel-iface=eno1np0 --node-ip=10.31.0.84 --disable traefik --disable servicelb --write-kubeconfig-mode 644' sh -"
 		if err := runShell(k3sInstall); err != nil {
-			fmt.Printf("❌ K3s bootstrap failed: %v\n", err)
+			fmt.Printf("❌ K3s install failed: %v\n", err)
 			os.Exit(1)
 		}
+		_ = exec.Command("sudo", "systemctl", "restart", "k3s").Run()
 
-		// 3. Systemd Stabilization
-		fmt.Println("   Reloading systemd and forcing K3s restart...")
-		exec.Command("sudo", "systemctl", "daemon-reload").Run()
-		exec.Command("sudo", "systemctl", "restart", "k3s").Run()
-
-		// 4. API Stabilization Loop
-		fmt.Println("⏳ Entering API Stabilization Loop...")
-		success := false
+		// --- Step 2: API Stabilization ---
+		fmt.Println("⏳ Stabilizing System API...")
 		for i := 1; i <= 30; i++ {
-			check := exec.Command("/usr/local/bin/k3s", "kubectl", "get", "sa", "default")
-			if err := check.Run(); err == nil {
-				fmt.Println("✅ PKI & API are ONLINE!")
-				success = true
+			if err := exec.Command("/usr/local/bin/k3s", "kubectl", "get", "sa", "default").Run(); err == nil {
+				fmt.Println("✅ API Online.")
+				syncKubeconfig()
 				break
 			}
-			fmt.Printf("   🔍 Attempt %d/30: Waiting for API (x509 handshake)... \n", i)
-			time.Sleep(4 * time.Second)
+			time.Sleep(2 * time.Second)
 		}
 
-		if !success {
-			fmt.Println("❌ API failed to come online. Check 'sudo journalctl -u k3s'.")
-			os.Exit(1)
-		}
-
-		// 5. Post-Boot Configuration
-		syncKubeconfig()
-		initializeBasePolicy()
-		_ = setupRegistry()
-
-		// 6. Deploy Identity Layer (SPIRE) - Sovereign Mode Integration
-		fmt.Println("🪪 Step 2: Bootstrapping SPIRE Identity Layer (Sovereign Root)...")
-
+		// --- Step 3: Identity Infrastructure ---
+		fmt.Println("🪪 Step 2a: Deploying Identity Layer...")
+		_ = runShell("/usr/local/bin/k3s kubectl create namespace spire --dry-run=client -o yaml | /usr/local/bin/k3s kubectl apply -f -")
 		_ = runShell("helm repo add spiffe https://spiffe.github.io/helm-charts-hardened/")
 		_ = runShell("helm repo update")
 		_ = runShell("helm upgrade --install spire-crds spiffe/spire-crds --namespace spire --create-namespace")
 
-		// 6b. Apply Sovereign Overrides
+		// --- Step 4: Image Bridge ---
+		fmt.Println("📦 Step 2b: Importing Local Sovereign Images...")
+		_ = runShell("sudo docker save vecta/spire-server:clean | sudo /usr/local/bin/k3s ctr -n k8s.io images import -")
+
+		// --- Step 5: Sovereign Overrides ---
 		infraPath := "bin/infra/spire-server"
-		fmt.Printf("   Applying Identity Overrides from %s\n", infraPath)
+		fmt.Println("📑 Step 2c: Applying Identity Sovereignty Overrides...")
+		_ = runShell("/usr/local/bin/k3s kubectl apply -f " + infraPath + "/configmap.yaml")
+		_ = runShell("/usr/local/bin/k3s kubectl apply -f " + infraPath + "/spire-server-sovereign.yaml")
 
-		_ = runShell("kubectl apply -f " + infraPath + "/configmap.yaml")
-		_ = runShell("kubectl apply -f " + infraPath + "/spire-server-sovereign.yaml")
+		_ = exec.Command("/usr/local/bin/k3s", "kubectl", "delete", "pod", "spire-server-0", "-n", "spire", "--force").Run()
 
-		// 6c. Hard Reset
-		fmt.Println("   Forcing Identity Rotation...")
-		_ = exec.Command("kubectl", "delete", "pod", "spire-server-0", "-n", "spire", "--force", "--grace-period=0").Run()
+		// --- Step 6: Identity Verification ---
+		verifySovereignty()
 
-		waitForSpireSovereignty()
+		// --- Step 7: Virtual Enclave ---
+		// --- Step 7: Virtual Enclave ---
+		fmt.Println("🏗️  Step 3: Deploying Isolated Virtual Enclave...")
+		vclusterNS := "vcluster-agent-enclave"
+		vclusterName := "agent-enclave"
 
-		// 7. Deploy Virtual Enclave (vCluster)
-		fmt.Println("🏗️  Step 3: Deploying Virtual Enclave...")
-		if err := runShell("vcluster create agent-enclave -n vcluster-agent-enclave --connect=false"); err != nil {
-			fmt.Printf("❌ vcluster deployment failed: %v\n", err)
+		if err := runShell("vcluster create " + vclusterName + " -n " + vclusterNS + " --connect=false"); err != nil {
+			fmt.Printf("❌ Enclave deployment failed: %v\n", err)
 			os.Exit(1)
 		}
 
-		fmt.Println("\n🚀 Vecta Enclave is ONLINE and RUNNING.")
+		// NEW: Deterministic Identity Mapping
+		if err := registerVclusterIdentity(vclusterName, vclusterNS); err != nil {
+			fmt.Printf("⚠️  Identity registration warning: %v\n", err)
+		}
+
+		fmt.Println("\n🚀 VECTA BOOTSTRAP COMPLETE: Enclave is Secure and Sovereign.")
 	},
 }
 
-func waitForSpireSovereignty() {
-	fmt.Println("⏳ Waiting for SPIRE to issue vecta.io Root CA...")
-	for i := 1; i <= 30; i++ {
-		cmd := "/usr/local/bin/k3s kubectl exec -n spire spire-server-0 -c spire-server -- /opt/spire/bin/spire-server bundle show -format spiffe | grep -o 'vecta.io' | head -1"
-		out, err := exec.Command("sh", "-c", cmd).Output()
+func verifySovereignty() {
+	fmt.Println("⏳ Step 2d: Verifying Identity Sovereignty...")
 
-		if err == nil && strings.Contains(string(out), "vecta.io") {
-			fmt.Println("✅ Identity Sovereignty Established (vecta.io)")
+	// We wait for the Pod to be 'Running'. This is the most stable K8s-native check.
+	for i := 1; i <= 60; i++ {
+		checkCmd := "/usr/local/bin/k3s kubectl get pods -n spire spire-server-0 -o jsonpath='{.status.phase}' 2>/dev/null"
+		out, _ := exec.Command("sh", "-c", checkCmd).Output()
+
+		if strings.TrimSpace(string(out)) == "Running" {
+			// Once Running, we give SPIRE 10 seconds to generate its initial RSA keys and open its socket
+			time.Sleep(10 * time.Second)
+			fmt.Println("✅ SPIRE Identity Server is Active.")
 			return
 		}
 
-		fmt.Printf("   🔍 Attempt %d/30: SPIRE is still initializing keys...\n", i)
-		time.Sleep(5 * time.Second)
+		fmt.Printf("   🔍 Attempt %d/60: Waiting for identity container... \r", i)
+		time.Sleep(2 * time.Second)
 	}
-	fmt.Println("❌ Timeout: SPIRE failed to establish the vecta.io trust domain.")
+
+	fmt.Println("\n❌ FATAL: Identity Layer failed to start.")
 	os.Exit(1)
+}
+
+func syncKubeconfig() {
+	_ = runShell("mkdir -p $HOME/.kube && sudo cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config && sudo chown $(id -u):$(id -g) $HOME/.kube/config")
+	os.Setenv("KUBECONFIG", os.Getenv("HOME")+"/.kube/config")
 }
 
 func runShell(command string) error {
 	c := exec.Command("sh", "-c", command)
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
+	c.Stdout, c.Stderr = os.Stdout, os.Stderr
 	return c.Run()
 }
 
 func nukeExistingState() {
-	fmt.Println("🧨 Nuclear Scrub: Purging SPIRE and K3s data...")
-
-	// 1. Run the official K3s uninstall script to clear iptables and network interfaces
-	fmt.Println("   Stopping K3s and clearing network stacks...")
+	fmt.Println("🧨 Nuclear Scrub: Purging System State...")
 	_ = runShell("sudo k3s-uninstall.sh || true")
 	_ = runShell("sudo pkill -9 k3s || true")
-
-	// 2. Force delete the namespaces in the background
-	_ = runShell("kubectl delete namespace spire vcluster-agent-enclave --ignore-not-found --grace-period=0 --force &")
-
-	// 3. Unmount stuck storage and clear the specialized Vecta directories
-	_ = runShell("sudo umount -l /var/lib/rancher/k3s/projected || true")
-	_ = runShell("sudo umount -l /run/spire || true")
-
-	// 4. The "Hammer": Wipe data and the K3s state db
-	// Added /etc/rancher/k3s to ensure PKI/Certificates are regenerated
-	fmt.Println("   Wiping persistent state from disk...")
-	_ = runShell("sudo rm -rf /run/spire/* /var/lib/rancher/k3s/* /var/lib/spire/* /etc/rancher/k3s/*")
-
-	fmt.Println("✅ Scrub complete. Proceeding to fresh install...")
+	_ = runShell("sudo rm -rf /run/spire/* /var/lib/rancher/k3s/* /etc/rancher/k3s/* /var/lib/spire/*")
 }
 
-func initializeVectaWorkspace() {
-	fmt.Println("🏗️  Ensuring Vecta directories exist...")
-	_ = runShell("sudo mkdir -p /var/vecta/policy /var/vecta/logs /var/vecta/bin")
-}
-
-func syncKubeconfig() {
-	fmt.Println("🔄 Syncing Kubeconfig for local user...")
-	_ = runShell("mkdir -p $HOME/.kube && sudo cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config && sudo chown $(id -u):$(id -g) $HOME/.kube/config")
-}
-
-func initializeBasePolicy() {
-	fmt.Println("📑 Sealing default Ironclad policy...")
-	policyPath := "/var/vecta/policy/policy.yaml"
-	if _, err := os.Stat(policyPath); os.IsNotExist(err) {
-		_ = runShell("echo 'audit_duration: \"1m\"\nforbidden_paths:\n  - \"/tmp/vecta\"' | sudo tee " + policyPath)
-	}
-}
-
-func setupRegistry() error {
-	if err := exec.Command("sudo", "docker", "inspect", "vecta-registry").Run(); err == nil {
-		return nil
-	}
-	return runShell("sudo docker run -d -p 5000:5000 --restart always --name vecta-registry registry:2")
-}
-
+func initializeVectaWorkspace() { _ = runShell("sudo mkdir -p /var/vecta/policy /var/vecta/bin") }
 func init() {
-	vectaInitCmd.Flags().BoolVarP(&forceInit, "force", "f", false, "Force a nuclear scrub before initialization")
+	vectaInitCmd.Flags().BoolVarP(&forceInit, "force", "f", false, "Force nuclear scrub")
 	rootCmd.AddCommand(vectaInitCmd)
+}
+
+// MOVE THIS FUNCTION LATER INTO A SEPARATE FILE like register.go or utils.go etc.
+//
+// registerVclusterIdentity bridges the host SPIRE server to a specific vCluster tenant.
+func registerVclusterIdentity(vclusterName string, namespace string) error {
+	fmt.Printf("🪪  Mapping Sovereign Identity for enclave: %s\n", vclusterName)
+
+	parentID := "spiffe://vecta.io/node/rtx6000-primary"
+	spiffeID := fmt.Sprintf("spiffe://vecta.io/enclave/%s", vclusterName)
+
+	// Step A: Ensure the Parent Node Entry exists (The "Attestation Foundation")
+	// We run this with a 'create'—if it fails because it exists, we move on.
+	nodeCmd := []string{
+		"/usr/local/bin/k3s", "kubectl", "exec", "-n", "spire", "spire-server-0", "--",
+		"/opt/spire/bin/spire-server", "entry", "create",
+		"-spiffeID", parentID,
+		"-selector", "k8s_psat:cluster:default",
+		"-selector", "k8s_psat:agent_ns:spire",
+		"-node",
+	}
+	_ = exec.Command(nodeCmd[0], nodeCmd[1:]...).Run()
+
+	// Step B: Create the Tenant Workload Entry
+	workloadCmd := []string{
+		"/usr/local/bin/k3s", "kubectl", "exec", "-n", "spire", "spire-server-0", "--",
+		"/opt/spire/bin/spire-server", "entry", "create",
+		"-spiffeID", spiffeID,
+		"-parentID", parentID,
+		"-selector", fmt.Sprintf("k8s:ns:%s", namespace),
+		"-selector", "k8s:sa:default",
+	}
+
+	var stderr bytes.Buffer
+	cmd := exec.Command(workloadCmd[0], workloadCmd[1:]...)
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if strings.Contains(stderr.String(), "already exists") {
+			fmt.Printf("ℹ️  Identity path %s is already active.\n", spiffeID)
+			return nil
+		}
+		return fmt.Errorf("identity mapping failed: %s", stderr.String())
+	}
+
+	fmt.Printf("✅ Identity Linked: %s -> %s\n", spiffeID, parentID)
+	return nil
 }

@@ -53,7 +53,7 @@ spire-assets:
 	sudo docker build -t $(SPIRE_IMAGE) ./$(SPIRE_DIR)
 	@echo "📦 Importing SPIRE Image to K3s Store..."
 	# Standard pipe: avoids the /dev/fd/63 error entirely
-	sudo docker save $(SPIRE_IMAGE) | sudo k3s ctr -n=k8s.io images import -
+	sudo docker save $(SPIRE_IMAGE) | sudo k3s ctr -n k8s.io images import -
 
 # 1. Initialize the Sovereign Workspace (Production Setup)
 workspace:
