@@ -15,11 +15,11 @@ type patchOperation struct {
 	Value interface{} `json:"value,omitempty"`
 }
 
+// CreatePatch generates the JSON patch for the Mutating Admission Webhook.
 func CreatePatch(pod *corev1.Pod, tenantID string) ([]byte, error) {
 	var patch []patchOperation
 
 	// 1. Define the Vecta-Sentry Sidecar Container
-	// Updated to use the /var/vecta production paths
 	sentryContainer := corev1.Container{
 		Name:  "sentry-warden",
 		Image: "localhost:5000/vecta-sentry:latest",
@@ -31,7 +31,15 @@ func CreatePatch(pod *corev1.Pod, tenantID string) ([]byte, error) {
 		},
 		Env: []corev1.EnvVar{
 			{Name: "TENANT_ID", Value: tenantID},
-			// The Warden reads VECTA_AUDIT_TIME or the policy.yaml file directly
+			// PORTABILITY FIX: Dynamically discover Host IP for Orchestrator communication
+			{
+				Name: "VECTA_HOST_IP",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "status.hostIP",
+					},
+				},
+			},
 		},
 	}
 
@@ -43,9 +51,6 @@ func CreatePatch(pod *corev1.Pod, tenantID string) ([]byte, error) {
 	})
 
 	// 3. Define the Production-Grade Volumes
-	// - SPIFFE CSI: For Identity
-	// - HostPath (Policy): For Read-Only Governance
-	// - HostPath (Lib): For Persisting Discovered Intent
 	newVolumes := []corev1.Volume{
 		{
 			Name: "spiffe-workload-api",
@@ -86,7 +91,63 @@ func CreatePatch(pod *corev1.Pod, tenantID string) ([]byte, error) {
 	return json.Marshal(patch)
 }
 
-// Helper for CSI ReadOnly pointer
+// PatchPodForSovereignty is required by server.go for direct orchestration.
+func PatchPodForSovereignty(pod *corev1.Pod) {
+	tenantID := pod.Labels["tenant"]
+
+	sentryContainer := corev1.Container{
+		Name:  "sentry-warden",
+		Image: "localhost:5000/vecta-sentry:latest",
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "spiffe-workload-api", MountPath: "/run/spire/sockets", ReadOnly: true},
+			{Name: "policy-vol", MountPath: "/var/vecta/policy", ReadOnly: true},
+			{Name: "lib-vol", MountPath: "/var/vecta/lib"},
+		},
+		Env: []corev1.EnvVar{
+			{Name: "TENANT_ID", Value: tenantID},
+			// PORTABILITY FIX: Map Host IP dynamically
+			{
+				Name: "VECTA_HOST_IP",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "status.hostIP",
+					},
+				},
+			},
+			// Warden code should use http://$VECTA_HOST_IP:8000
+		},
+	}
+
+	pod.Spec.Containers = append(pod.Spec.Containers, sentryContainer)
+
+	pod.Spec.Volumes = append(pod.Spec.Volumes, []corev1.Volume{
+		{
+			Name: "spiffe-workload-api",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/run/spire/sockets",
+				},
+			},
+		},
+		{
+			Name: "policy-vol",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/var/vecta/policy",
+				},
+			},
+		},
+		{
+			Name: "lib-vol",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/var/vecta/lib",
+				},
+			},
+		},
+	}...)
+}
+
 func ptrBool(b bool) *bool {
 	return &b
 }

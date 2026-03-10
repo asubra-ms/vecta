@@ -11,30 +11,35 @@ package identity
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
 
-// RegisterEnclaveIdentity creates a SPIFFE entry for a specific enclave tenant.
-func RegisterEnclaveIdentity(tenantID string, namespace string) error {
+// RegisterVclusterIdentity matches the call in server.go
+func RegisterVclusterIdentity(tenantID string, namespace string) error {
 	spiffeID := fmt.Sprintf("spiffe://vecta.io/enclave/%s", tenantID)
+	// Using the standard agent parent ID
 	parentID := "spiffe://vecta.io/ns/spire/sa/spire-agent"
 	selector := fmt.Sprintf("k8s:ns:%s", namespace)
 
 	fmt.Printf("🛡️  Establishing Identity: %s\n", spiffeID)
 
-	// We use 'kubectl exec' to reach the server.
-	// The '-i' flag is omitted for non-interactive automation.
-	cmd := exec.Command("kubectl", "exec", "-n", "spire", "spire-server-0", "--",
+	// Use absolute path for k3s and ensure KUBECONFIG is set for the exec call
+	cmd := exec.Command("/usr/local/bin/k3s", "kubectl", "exec", "-n", "spire", "spire-server-0", "--",
 		"/opt/spire/bin/spire-server", "entry", "create",
 		"-parentID", parentID,
 		"-spiffeID", spiffeID,
-		"-selector", selector)
+		"-selector", selector,
+		"-selector", "k8s:sa:default") // Explicitly bind to default SA for enclave agents
+
+	// Inherit system environment to ensure kubectl has cluster access
+	cmd.Env = append(os.Environ(), "KUBECONFIG=/etc/rancher/k3s/k3s.yaml")
 
 	out, err := cmd.CombinedOutput()
+	outputStr := string(out)
+
 	if err != nil {
-		outputStr := string(out)
-		// Idempotency: If already exists, we are good.
 		if strings.Contains(outputStr, "already exists") {
 			fmt.Println("ℹ️  Identity already exists. Skipping.")
 			return nil

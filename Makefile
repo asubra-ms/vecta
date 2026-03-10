@@ -28,12 +28,14 @@ test: all build-test-agent push-sentry
 	@pgrep vecta > /dev/null || (echo "❌ Error: 'vecta start-server' must be running!" && exit 1)
 	
 	@echo "1. Deploying agent-fs with 30s Audit window..."
-	@./$(BUILD_DIR)/$(BINARY_NAME) deploy --image $(TEST_AGENT_IMAGE) --name fs-tester --audit-time 30s || (echo "❌ Deployment Failed!" && exit 1)
+	@./$(BUILD_DIR)/$(BINARY_NAME) deploy --image $(TEST_AGENT_IMAGE) --name fs-tester --audit-time 45s || (echo "❌ Deployment Failed!" && exit 1)
 	
 	@echo "2. Waiting for transition and violation (45s)..."
-	@sleep 45
+	@sleep 65
 	
 	@echo "3. Verifying Kill-Switch Result..."
+	@vcluster connect agent-enclave --namespace vcluster-agent-enclave -- \
+		kubectl get pod fs-tester -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' | grep -q "137" && echo "✅ TEST PASSED" || (echo "❌ TEST FAILED"; exit 1)
 	@if ./$(BUILD_DIR)/$(BINARY_NAME) status | grep -q "fs-tester"; then \
 		echo "❌ TEST FAILED: Agent survived forbidden access."; \
 		exit 1; \
@@ -76,6 +78,7 @@ build-sentry:
 	@echo "🛡️  Building Vecta Sentry (Warden) Binary..."
 	@mkdir -p $(BUILD_DIR)
 	GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(SENTRY_NAME) ./internal/sentry
+	sudo chmod +x $(BUILD_DIR)/$(SENTRY_NAME)
 	@echo "🐳 Building Docker Image: $(SENTRY_IMAGE)"
 	sudo docker build -t $(SENTRY_IMAGE) -f Dockerfile.sentry .
 	@echo "✅ Sentry image built and tagged."
