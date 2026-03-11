@@ -39,9 +39,9 @@ test: all build-test-agent push-sentry
 		kubectl get pod fs-tester -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' | grep -q "137" && echo "✅ TEST PASSED" || (echo "❌ TEST FAILED"; exit 1)
 	@if ./$(BUILD_DIR)/$(BINARY_NAME) status | grep -q "fs-tester"; then \
 		echo "❌ TEST FAILED: Agent survived forbidden access."; \
-		exit 1;
+		exit 1; \
 	else \
-		echo "✅ TEST PASSED: Agent terminated via SIGKILL.";
+		echo "✅ TEST PASSED: Agent terminated via SIGKILL."; \
 	fi
 
 all: workspace build build-sentry

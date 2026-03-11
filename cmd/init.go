@@ -59,8 +59,10 @@ var vectaInitCmd = &cobra.Command{
 		_ = runShell("sudo docker save localhost:5000/spire-agent:clean | sudo /usr/local/bin/k3s ctr -n k8s.io images import -")
 
 		// --- Step 5: Sovereign Overrides ---
-		infraPath := "bin/infra/spire-server"
+		infraPath := "/usr/local/vecta/bin/infra/spire-server"
+
 		fmt.Println("📑 Step 2c: Applying Identity Sovereignty Overrides...")
+
 		_ = runShell("/usr/local/bin/k3s kubectl apply -f " + infraPath + "/configmap.yaml")
 		_ = runShell("/usr/local/bin/k3s kubectl apply -f " + infraPath + "/spire-server-sovereign.yaml")
 
@@ -130,7 +132,12 @@ func nukeExistingState() {
 	_ = runShell("sudo rm -rf /run/spire/* /var/lib/rancher/k3s/* /etc/rancher/k3s/* /var/lib/spire/*")
 }
 
-func initializeVectaWorkspace() { _ = runShell("sudo mkdir -p /var/vecta/policy /var/vecta/bin") }
+func initializeVectaWorkspace() {
+	_ = runShell("sudo mkdir -p /usr/local/vecta/policy /usr/local/vecta/bin /usr/local/vecta/lib")
+}
+
+// Inside vectaInitCmd:
+
 func init() {
 	vectaInitCmd.Flags().BoolVarP(&forceInit, "force", "f", false, "Force nuclear scrub")
 	rootCmd.AddCommand(vectaInitCmd)

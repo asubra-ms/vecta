@@ -44,8 +44,8 @@ var resetCmd = &cobra.Command{
 
 		// 3. Purge Sovereign Filesystem Hierarchy (Unified Workspace)
 		// Requirement: Everything under /var/vecta must be purged for a clean slate.
-		fmt.Println("🧹 Purging Vecta Sovereign Root (/var/vecta)...")
-		_ = exec.Command("sudo", "rm", "-rf", "/var/vecta").Run()
+		fmt.Println("🧹 Purging Vecta Sovereign Root (/usr/local/vecta/bin)...")
+		_ = exec.Command("sudo", "rm", "-rf", "/usr/local/vecta/bin").Run()
 
 		// 4. Purge Standard Host Infrastructure Paths
 		fmt.Println("🧹 Purging system directories...")
