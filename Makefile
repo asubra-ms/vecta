@@ -60,6 +60,7 @@ spire-assets:
 # 1. Initialize the Sovereign Workspace (Production Setup)
 workspace:
 	@echo "🏗️  Initializing Vecta Workspace at $(VECTA_ROOT)..."
+	# CHANGED: Added bin and lib subdirectories
 	@sudo mkdir -p $(VECTA_ROOT)/policy $(VECTA_ROOT)/lib $(VECTA_ROOT)/logs $(VECTA_ROOT)/bin $(VECTA_ROOT)/version
 	@sudo chown -R $(USER):$(USER) $(VECTA_ROOT)
 	@sudo chmod -R 755 $(VECTA_ROOT)
@@ -107,6 +108,7 @@ reset: build
 	@echo "🧨 Initializing Vecta Reset..."
 	sudo ./$(BUILD_DIR)/$(BINARY_NAME) reset --force
 	@echo "🧹 Purging Vecta Workspace..."
+	# CHANGED: Purging the new root
 	sudo rm -rf $(VECTA_ROOT)
 
 clean:

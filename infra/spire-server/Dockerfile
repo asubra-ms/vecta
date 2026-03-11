@@ -1,14 +1,13 @@
 FROM ghcr.io/spiffe/spire-server:1.8.1 AS source
 FROM alpine:3.18
-
 RUN addgroup -S spire && adduser -S spire -G spire
 RUN apk add --no-cache ca-certificates openssl bash
 
-# Create the sovereign bin directory
-RUN mkdir -p /usr/local/vecta/bin /run/spire/data /run/spire/config /var/lib/spire \
+# Create directories using the new sovereign standard
+RUN mkdir -p /usr/local/vecta/bin /usr/local/vecta/lib /run/spire/data /run/spire/config /var/lib/spire \
     && chown -R spire:spire /usr/local/vecta /run/spire /var/lib/spire
 
-# Copy binaries to the exact bin path
+# Copy BOTH binaries to the bin subdirectory
 COPY --from=source /opt/spire/bin/spire-server /usr/local/vecta/bin/spire-server
 COPY --from=source /opt/spire/bin/spire-agent /usr/local/vecta/bin/spire-agent
 
