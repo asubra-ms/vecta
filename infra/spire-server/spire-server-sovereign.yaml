@@ -1,8 +1,29 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
+  name: spire-server
+  namespace: spire
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
   name: spire-agent
   namespace: spire
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spire-server
+  namespace: spire
+spec:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: 8081
+      targetPort: 8081
+      protocol: TCP
+  selector:
+    app: spire-server
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -20,6 +41,7 @@ spec:
       labels:
         app: spire-server
     spec:
+      serviceAccountName: spire-server
       containers:
       - name: spire-server
         # Updated to use the local Vecta registry
@@ -55,14 +77,15 @@ spec:
     spec:
       hostPID: true
       hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       serviceAccountName: spire-agent
       containers:
         - name: spire-agent
           # Updated to use the local Vecta registry and the correct agent-specific image
           image: localhost:5000/spire-server:clean
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           # Full path to the binary in the sovereign image
-          command: ["/opt/spire/bin/spire-agent"]
+          command: ["spire-agent"]
           args: ["run", "-config", "/run/spire/config/agent.conf"]
           securityContext:
             privileged: true
@@ -92,7 +115,28 @@ spec:
           projected:
             sources:
               - serviceAccountToken:
-                  path: spire-agent-token
+                  path: spire-agent
                   expirationSeconds: 7200
                   audience: spire-server
-
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: spire-server-trust-role
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: spire-server-trust-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: spire-server-trust-role
+subjects:
+  - kind: ServiceAccount
+    name: spire-server
+    namespace: spire
