@@ -31,7 +31,7 @@ func CreatePatch(pod *corev1.Pod, tenantID string) ([]byte, error) {
 		},
 		Env: []corev1.EnvVar{
 			{Name: "TENANT_ID", Value: tenantID},
-			// PORTABILITY FIX: Dynamically discover Host IP for Orchestrator communication
+			// Portability: Use status.hostIP to reach the Orchestrator on any host
 			{
 				Name: "VECTA_HOST_IP",
 				ValueFrom: &corev1.EnvVarSource{
@@ -92,9 +92,11 @@ func CreatePatch(pod *corev1.Pod, tenantID string) ([]byte, error) {
 }
 
 // PatchPodForSovereignty is required by server.go for direct orchestration.
+// It applies the Vecta V3 sidecar and volume logic directly to the Pod object.
 func PatchPodForSovereignty(pod *corev1.Pod) {
 	tenantID := pod.Labels["tenant"]
 
+	// Define Sentry Warden sidecar using V3 production paths
 	sentryContainer := corev1.Container{
 		Name:  "sentry-warden",
 		Image: "localhost:5000/vecta-sentry:latest",
@@ -105,7 +107,7 @@ func PatchPodForSovereignty(pod *corev1.Pod) {
 		},
 		Env: []corev1.EnvVar{
 			{Name: "TENANT_ID", Value: tenantID},
-			// PORTABILITY FIX: Map Host IP dynamically
+			// Portability: Use status.hostIP to find the Orchestrator host
 			{
 				Name: "VECTA_HOST_IP",
 				ValueFrom: &corev1.EnvVarSource{
@@ -114,12 +116,13 @@ func PatchPodForSovereignty(pod *corev1.Pod) {
 					},
 				},
 			},
-			// Warden code should use http://$VECTA_HOST_IP:8000
 		},
 	}
 
+	// Inject Sidecar
 	pod.Spec.Containers = append(pod.Spec.Containers, sentryContainer)
 
+	// Inject Volumes (Using HostPath for direct-deployment mode on RTX 6000)
 	pod.Spec.Volumes = append(pod.Spec.Volumes, []corev1.Volume{
 		{
 			Name: "spiffe-workload-api",
@@ -148,6 +151,7 @@ func PatchPodForSovereignty(pod *corev1.Pod) {
 	}...)
 }
 
+// Helper for CSI ReadOnly pointer
 func ptrBool(b bool) *bool {
 	return &b
 }

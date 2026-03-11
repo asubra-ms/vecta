@@ -12,14 +12,10 @@ data:
       data_dir = "/run/spire/data"
       log_level = "DEBUG"
       ca_key_type = "rsa-2048"
-      # ADD THIS LINE: Explicitly defines the CA identity for the Sovereign Root
       ca_subject = {
-        country = ["US"],
-        organization = ["Vecta"],
-        common_name = "vecta.io",
-      } # Added missing closing brace for ca_subject
-    } # Added missing closing brace for server block
-
+        country = ["US"], organization = ["Vecta"], common_name = "vecta.io",
+      }
+    }
     plugins {
       DataStore "sql" {
         plugin_data {
@@ -27,18 +23,33 @@ data:
           connection_string = "/run/spire/data/spire.db"
         }
       }
-
       NodeAttestor "k8s_psat" {
         plugin_data {
-          clusters = {
-            # Changed to "default" to match the K3s standard cluster name
-            "default" = {
-              service_account_allow_list = ["spire:spire-agent"]
-            }
-          }
+          clusters = { "default" = { service_account_allow_list = ["spire:spire-agent"] } }
         }
       }
-
       KeyManager "memory" {}
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-agent
+  namespace: spire
+data:
+  agent.conf: |
+    agent {
+      data_dir = "/run/spire/bundle"
+      log_level = "DEBUG"
+      server_address = "spire-server"
+      server_port = "8081"
+      socket_path = "/run/spire/sockets/agent.sock"
+      trust_bundle_path = "/run/spire/bundle/bundle.crt"
+      trust_domain = "vecta.io"
+    }
+    plugins {
+      NodeAttestor "k8s_psat" { plugin_data { cluster = "default" } }
+      KeyManager "memory" {}
+      WorkloadAttestor "k8s" { plugin_data { skip_kubelet_verification = true } }
     }
 
