@@ -24,7 +24,7 @@ spec:
       - name: spire-server
         # Updated to use the local Vecta registry
         image: localhost:5000/spire-server:clean
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         command: ["/opt/spire/bin/spire-server"]
         args: ["run", "-config", "/run/spire/config/server.conf"]
         volumeMounts:
@@ -59,10 +59,10 @@ spec:
       containers:
         - name: spire-agent
           # Updated to use the local Vecta registry and the correct agent-specific image
-          image: localhost:5000/spire-agent:clean
+          image: localhost:5000/spire-server:clean
           imagePullPolicy: IfNotPresent
           # Full path to the binary in the sovereign image
-          command: ["/usr/bin/spire-agent"]
+          command: ["/opt/spire/bin/spire-agent"]
           args: ["run", "-config", "/run/spire/config/agent.conf"]
           securityContext:
             privileged: true
@@ -73,6 +73,9 @@ spec:
               mountPath: /run/spire/bundle
             - name: spire-agent-socket
               mountPath: /run/spire/sockets
+            - name: spire-agent-token
+              mountPath: /var/run/secrets/tokens
+              readOnly: true
       volumes:
         - name: spire-config
           configMap:
@@ -85,4 +88,11 @@ spec:
           hostPath:
             path: /run/spire/sockets
             type: DirectoryOrCreate
+        - name: spire-agent-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: spire-agent-token
+                  expirationSeconds: 7200
+                  audience: spire-server
 

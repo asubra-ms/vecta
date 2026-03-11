@@ -1,19 +1,19 @@
-FROM ghcr.io/spiffe/spire-server:1.8.1 AS source
+# Stage 1: Build the environment
 FROM alpine:3.18
 RUN addgroup -S spire && adduser -S spire -G spire
 RUN apk add --no-cache ca-certificates openssl bash
 
-# Create directories using the new sovereign standard
-RUN mkdir -p /usr/local/vecta/bin /usr/local/vecta/lib /run/spire/data /run/spire/config /var/lib/spire \
-    && chown -R spire:spire /usr/local/vecta /run/spire /var/lib/spire
+# Create the directory structure explicitly
+RUN mkdir -p /opt/spire/bin /run/spire/data /run/spire/config /var/lib/spire \
+    && chown -R spire:spire /opt/spire /run/spire /var/lib/spire
 
-# Copy BOTH binaries to the bin subdirectory
-COPY --from=source /opt/spire/bin/spire-server /usr/local/vecta/bin/spire-server
-COPY --from=source /opt/spire/bin/spire-agent /usr/local/vecta/bin/spire-agent
+# Directly pull from official images without using intermediate aliases
+COPY --from=ghcr.io/spiffe/spire-server:1.8.1 /opt/spire/bin/spire-server /opt/spire/bin/spire-server
+COPY --from=ghcr.io/spiffe/spire-agent:1.8.1 /opt/spire/bin/spire-agent /opt/spire/bin/spire-agent
 
-RUN chmod +x /usr/local/vecta/bin/spire-server /usr/local/vecta/bin/spire-agent
+RUN chmod +x /opt/spire/bin/spire-server /opt/spire/bin/spire-agent
 
 USER spire
-WORKDIR /usr/local/vecta
-ENTRYPOINT ["/usr/local/vecta/bin/spire-server", "run", "-config", "/run/spire/config/server.conf"]
+WORKDIR /opt/spire
+ENTRYPOINT ["/opt/spire/bin/spire-server", "run", "-config", "/run/spire/config/server.conf"]
 

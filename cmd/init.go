@@ -59,7 +59,7 @@ var vectaInitCmd = &cobra.Command{
 		_ = runShell("sudo docker save localhost:5000/spire-agent:clean | sudo /usr/local/bin/k3s ctr -n k8s.io images import -")
 
 		// --- Step 5: Sovereign Overrides ---
-		infraPath := "/usr/local/vecta/bin/infra/spire-server"
+		infraPath := "infra/spire-server"
 
 		fmt.Println("📑 Step 2c: Applying Identity Sovereignty Overrides...")
 

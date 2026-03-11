@@ -24,7 +24,7 @@ spec:
       - name: spire-server
         # Updated to use the local Vecta registry
         image: localhost:5000/spire-server:clean
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         command: ["/opt/spire/bin/spire-server"]
         args: ["run", "-config", "/run/spire/config/server.conf"]
         volumeMounts:
@@ -59,7 +59,7 @@ spec:
       containers:
         - name: spire-agent
           # Updated to use the local Vecta registry and the correct agent-specific image
-          image: localhost:5000/spire-agent:clean
+          image: localhost:5000/spire-server:clean
           imagePullPolicy: IfNotPresent
           # Full path to the binary in the sovereign image
           command: ["/opt/spire/bin/spire-agent"]

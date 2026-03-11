@@ -17,11 +17,20 @@ TEST_AGENT_IMAGE=$(REGISTRY)/agent-fs:latest
 
 .PHONY: all build build-sentry clean start-server reset push-sentry workspace install-policy spire-assets build-test-agent test
 
-# Target to build the specific FS test agent
-build-test-agent:
-	@echo "🐍 Building Filesystem Test Agent (agent-fs.py)..."
+
+# Ensure the local registry is running
+ensure-registry:
+	@if ! docker ps | grep -q vecta-registry; then \
+		echo "🚀 Starting Local Sovereign Registry..."; \
+		docker run -d -p 5000:5000 --restart=always --name vecta-registry registry:2 || true; \
+	fi
+
+# Update build-test-agent to depend on the registry
+build-test-agent: ensure-registry
+	@echo "🐍 Building Filesystem Test Agent..."
 	sudo docker build --network=host -t $(TEST_AGENT_IMAGE) ./tests/chaos-agents/agent-fs
 	sudo docker push $(TEST_AGENT_IMAGE)
+
 
 # The Master Test Target
 test: all build-test-agent push-sentry
@@ -46,17 +55,6 @@ test: all build-test-agent push-sentry
 
 all: workspace build build-sentry
 
-# --- Sovereign SPIRE Asset Preparation ---
-spire-assets:
-	@echo "🪪  Preparing Sovereign SPIRE Identity Assets..."
-	@mkdir -p $(BUILD_DIR)/$(SPIRE_DIR)
-	@cp $(SPIRE_DIR)/configmap.yaml $(BUILD_DIR)/$(SPIRE_DIR)/ 2>/dev/null || true
-	@cp $(SPIRE_DIR)/spire-server-sovereign.yaml $(BUILD_DIR)/$(SPIRE_DIR)/ 2>/dev/null || true
-	@echo "🐳 Building Clean SPIRE Server Image..."
-	sudo docker build -t $(SPIRE_IMAGE) ./$(SPIRE_DIR)
-	@echo "📦 Importing SPIRE Image to K3s Store..."
-	sudo docker save $(SPIRE_IMAGE) | sudo k3s ctr -n k8s.io images import -
-
 # 1. Initialize the Sovereign Workspace (Production Setup)
 workspace:
 	@echo "🏗️  Initializing Vecta Workspace at $(VECTA_ROOT)..."
@@ -68,11 +66,12 @@ workspace:
 
 # 2. Build the unified binary (CLI + API) - Depends on spire-assets
 build: spire-assets
-	@echo "🔨 Building Vecta Unified Binary..."
-	@mkdir -p $(BUILD_DIR)
-	go mod tidy
-	go build -o $(BUILD_DIR)/$(BINARY_NAME) .
-	@echo "✅ Build complete: ./$(BUILD_DIR)/$(BINARY_NAME)"
+	@echo "🪪  Preparing Sovereign SPIRE Identity Assets..."
+	@mkdir -p $(BUILD_DIR)/$(SPIRE_DIR)
+	@cp $(SPIRE_DIR)/configmap.yaml $(BUILD_DIR)/$(SPIRE_DIR)/ 2>/dev/null || true
+	@cp $(SPIRE_DIR)/spire-server-sovereign.yaml $(BUILD_DIR)/$(SPIRE_DIR)/ 2>/dev/null || true
+	sudo docker build -t $(SPIRE_IMAGE) ./$(SPIRE_DIR)
+	sudo docker save $(SPIRE_IMAGE) | sudo /usr/local/bin/k3s ctr -n k8s.io images import -
 
 # 3. Build the Sentry Warden and the Docker Image
 build-sentry:
@@ -102,6 +101,7 @@ push-sentry:
 start-server: build
 	@echo "🚀 Launching Vecta Orchestrator API..."
 	./$(BUILD_DIR)/$(BINARY_NAME) start-server --port 8000
+
 
 # 7. Teardown and Cleanup
 reset: build
