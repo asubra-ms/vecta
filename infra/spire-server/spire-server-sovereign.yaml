@@ -22,7 +22,8 @@ spec:
     spec:
       containers:
       - name: spire-server
-        image: vecta/spire-server:clean
+        # Updated to use the local Vecta registry
+        image: localhost:5000/spire-server:clean
         imagePullPolicy: IfNotPresent
         command: ["/opt/spire/bin/spire-server"]
         args: ["run", "-config", "/run/spire/config/server.conf"]
@@ -57,10 +58,11 @@ spec:
       serviceAccountName: spire-agent
       containers:
         - name: spire-agent
-          image: vecta/spire-agent:clean
+          # Updated to use the local Vecta registry and the correct agent-specific image
+          image: localhost:5000/spire-agent:clean
           imagePullPolicy: IfNotPresent
           # Full path to the binary in the sovereign image
-          command: ["/opt/spire/bin/spire-agent"]
+          command: ["/usr/bin/spire-agent"]
           args: ["run", "-config", "/run/spire/config/agent.conf"]
           securityContext:
             privileged: true

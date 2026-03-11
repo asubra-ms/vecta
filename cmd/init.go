@@ -55,7 +55,8 @@ var vectaInitCmd = &cobra.Command{
 
 		// --- Step 4: Image Bridge ---
 		fmt.Println("📦 Step 2b: Importing Local Sovereign Images...")
-		_ = runShell("sudo docker save vecta/spire-server:clean | sudo /usr/local/bin/k3s ctr -n k8s.io images import -")
+		_ = runShell("sudo docker save localhost:5000/spire-server:clean | sudo /usr/local/bin/k3s ctr -n k8s.io images import -")
+		_ = runShell("sudo docker save localhost:5000/spire-agent:clean | sudo /usr/local/bin/k3s ctr -n k8s.io images import -")
 
 		// --- Step 5: Sovereign Overrides ---
 		infraPath := "bin/infra/spire-server"
