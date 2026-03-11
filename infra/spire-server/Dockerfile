@@ -10,14 +10,17 @@ RUN addgroup -S spire && adduser -S spire -G spire
 # Install necessary tools
 RUN apk add --no-cache ca-certificates openssl bash
 
-# Create directories
-RUN mkdir -p /opt/spire/bin /run/spire/data /run/spire/config /var/lib/spire \
-    && chown -R spire:spire /opt/spire /run/spire /var/lib/spire
+# Create directories using the new sovereign standard
+RUN mkdir -p /usr/local/vecta/bin /run/spire/data /run/spire/config /var/lib/spire \
+    && chown -R spire:spire /usr/local/vecta /run/spire /var/lib/spire
 
-# Copy the server binary
-COPY --from=source /opt/spire/bin/spire-server /opt/spire/bin/spire-server
+# Copy BOTH server and agent binaries to the sovereign path
+COPY --from=source /opt/spire/bin/spire-server /usr/local/vecta/bin/spire-server
+COPY --from=source /opt/spire/bin/spire-agent /usr/local/vecta/bin/spire-agent
 
 USER spire
-WORKDIR /opt/spire
+WORKDIR /usr/local/vecta
 
-ENTRYPOINT ["/opt/spire/bin/spire-server", "run", "-config", "/run/spire/config/server.conf"]
+# Entrypoint updated to sovereign binary path
+ENTRYPOINT ["/usr/local/vecta/bin/spire-server", "run", "-config", "/run/spire/config/server.conf"]
+

@@ -5,41 +5,15 @@ SENTRY_NAME=sentry-warden
 BUILD_DIR=bin
 REGISTRY=localhost:5000
 SENTRY_IMAGE=$(REGISTRY)/vecta-sentry:latest
-VECTA_ROOT=/var/vecta
+# CHANGED: Updated Vecta Home to sovereign standard
+VECTA_ROOT=/usr/local/vecta
 
 # SPIRE Sovereign Identity Assets
 SPIRE_DIR=infra/spire-server
-SPIRE_SERVER_IMAGE=$(REGISTRY)/spire-server:clean
-SPIRE_AGENT_IMAGE=$(REGISTRY)/spire-agent:clean
+SPIRE_IMAGE=vecta/spire-server:clean
 
 # Tests and test agents
 TEST_AGENT_IMAGE=$(REGISTRY)/agent-fs:latest
-
-
-# Local Vecta Registry 
-REGISTRY=localhost:5000
-REGISTRY_CONTAINER=vecta-registry
-
-
-# --- Registry Automation ---
-# Checks if the registry container is running, starts it if not, and creates it if missing.
-registry-up:
-	@echo "📡 Checking Local Vecta Registry..."
-	@if [ ! $$(docker ps -a -q -f name=$(REGISTRY_CONTAINER)) ]; then \
-		echo "🚀 Creating and starting new registry container..."; \
-		docker run -d -p 5000:5000 --restart=always --name $(REGISTRY_CONTAINER) registry:2; \
-	elif [ ! $$(docker ps -q -f name=$(REGISTRY_CONTAINER)) ]; then \
-		echo "🔌 Starting existing registry container..."; \
-		docker start $(REGISTRY_CONTAINER); \
-	else \
-		echo "✅ Registry is already online."; \
-	fi
-	@echo "⏳ Waiting for registry API to respond..."
-	@until curl -s http://localhost:5000/v2/ > /dev/null; do sleep 1; done
-
-
-
-
 
 .PHONY: all build build-sentry clean start-server reset push-sentry workspace install-policy spire-assets build-test-agent test
 
@@ -65,31 +39,23 @@ test: all build-test-agent push-sentry
 		kubectl get pod fs-tester -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}' | grep -q "137" && echo "✅ TEST PASSED" || (echo "❌ TEST FAILED"; exit 1)
 	@if ./$(BUILD_DIR)/$(BINARY_NAME) status | grep -q "fs-tester"; then \
 		echo "❌ TEST FAILED: Agent survived forbidden access."; \
-		exit 1; \
+		exit 1;
 	else \
-		echo "✅ TEST PASSED: Agent terminated via SIGKILL."; \
+		echo "✅ TEST PASSED: Agent terminated via SIGKILL.";
 	fi
 
 all: workspace build build-sentry
 
 # --- Sovereign SPIRE Asset Preparation ---
-spire-assets: registry-up
+spire-assets:
 	@echo "🪪  Preparing Sovereign SPIRE Identity Assets..."
 	@mkdir -p $(BUILD_DIR)/$(SPIRE_DIR)
 	@cp $(SPIRE_DIR)/configmap.yaml $(BUILD_DIR)/$(SPIRE_DIR)/ 2>/dev/null || true
 	@cp $(SPIRE_DIR)/spire-server-sovereign.yaml $(BUILD_DIR)/$(SPIRE_DIR)/ 2>/dev/null || true
-	
-	@echo "🐳 Building SPIRE Images for Local Registry..."
-	sudo docker build -t $(SPIRE_SERVER_IMAGE) ./$(SPIRE_DIR)
-	sudo docker build -t $(SPIRE_AGENT_IMAGE) ./$(SPIRE_DIR)
-	
-	@echo "📦 Pushing SPIRE Images to $(REGISTRY)..."
-	sudo docker push $(SPIRE_SERVER_IMAGE)
-	sudo docker push $(SPIRE_AGENT_IMAGE)
-	
-	@echo "📥 Importing SPIRE Images to K3s Store..."
-	sudo docker save $(SPIRE_SERVER_IMAGE) | sudo k3s ctr -n k8s.io images import -
-	sudo docker save $(SPIRE_AGENT_IMAGE) | sudo k3s ctr -n k8s.io images import -
+	@echo "🐳 Building Clean SPIRE Server Image..."
+	sudo docker build -t $(SPIRE_IMAGE) ./$(SPIRE_DIR)
+	@echo "📦 Importing SPIRE Image to K3s Store..."
+	sudo docker save $(SPIRE_IMAGE) | sudo k3s ctr -n k8s.io images import -
 
 # 1. Initialize the Sovereign Workspace (Production Setup)
 workspace:
