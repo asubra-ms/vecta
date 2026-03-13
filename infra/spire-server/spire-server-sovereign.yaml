@@ -44,7 +44,6 @@ spec:
       serviceAccountName: spire-server
       containers:
       - name: spire-server
-        # Updated to use the local Vecta registry
         image: localhost:5000/spire-server:clean
         imagePullPolicy: Always
         command: ["/opt/spire/bin/spire-server"]
@@ -54,12 +53,18 @@ spec:
             mountPath: /run/spire/config
           - name: spire-data
             mountPath: /run/spire/data
+          - name: spire-bundle
+            mountPath: /run/spire/bundle
       volumes:
         - name: spire-config
           configMap:
             name: spire-server-forced
         - name: spire-data
           emptyDir: {}
+        - name: spire-bundle
+          hostPath:
+            path: /run/spire/bundle
+            type: DirectoryOrCreate
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -81,11 +86,9 @@ spec:
       serviceAccountName: spire-agent
       containers:
         - name: spire-agent
-          # Updated to use the local Vecta registry and the correct agent-specific image
           image: localhost:5000/spire-server:clean
           imagePullPolicy: Always
-          # Full path to the binary in the sovereign image
-          command: ["spire-agent"]
+          command: ["/opt/spire/bin/spire-agent"]
           args: ["run", "-config", "/run/spire/config/agent.conf"]
           securityContext:
             privileged: true
@@ -140,3 +143,4 @@ subjects:
   - kind: ServiceAccount
     name: spire-server
     namespace: spire
+

@@ -10,7 +10,8 @@ VECTA_ROOT=/usr/local/vecta
 
 # SPIRE Sovereign Identity Assets
 SPIRE_DIR=infra/spire-server
-SPIRE_IMAGE=vecta/spire-server:clean
+SPIRE_IMAGE=localhost:5000/spire-server:clean
+
 
 # Tests and test agents
 TEST_AGENT_IMAGE=$(REGISTRY)/agent-fs:latest

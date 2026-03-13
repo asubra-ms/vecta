@@ -39,7 +39,7 @@ metadata:
 data:
   agent.conf: |
     agent {
-      data_dir = "/run/spire/date"
+      data_dir = "/run/spire/data"
       log_level = "DEBUG"
       server_address = "spire-server"
       server_port = "8081"
