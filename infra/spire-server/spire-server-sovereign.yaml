@@ -45,7 +45,7 @@ spec:
       containers:
       - name: spire-server
         image: localhost:5000/spire-server:clean
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         command: ["/opt/spire/bin/spire-server"]
         args: ["run", "-config", "/run/spire/config/server.conf"]
         volumeMounts:
@@ -84,10 +84,17 @@ spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       serviceAccountName: spire-agent
+      initContainers:
+        - name: wait-for-bundle
+          image: busybox:1.28
+          command: ['sh', '-c', 'until [ -f /run/spire/bundle/bundle.crt ]; do echo waiting for bundle; sleep 2; done;']
+          volumeMounts:
+            - name: spire-bundle
+              mountPath: /run/spire/bundle
       containers:
         - name: spire-agent
           image: localhost:5000/spire-server:clean
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           command: ["/opt/spire/bin/spire-agent"]
           args: ["run", "-config", "/run/spire/config/agent.conf"]
           securityContext:
