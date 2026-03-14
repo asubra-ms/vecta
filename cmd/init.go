@@ -72,7 +72,6 @@ var vectaInitCmd = &cobra.Command{
 		verifySovereignty()
 
 		// --- Step 7: Virtual Enclave ---
-		// --- Step 7: Virtual Enclave ---
 		fmt.Println("🏗️  Step 3: Deploying Isolated Virtual Enclave...")
 		vclusterNS := "vcluster-agent-enclave"
 		vclusterName := "agent-enclave"
@@ -82,36 +81,13 @@ var vectaInitCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// NEW: Deterministic Identity Mapping
+		// Deterministic Identity Mapping
 		if err := registerVclusterIdentity(vclusterName, vclusterNS); err != nil {
 			fmt.Printf("⚠️  Identity registration warning: %v\n", err)
 		}
 
 		fmt.Println("\n🚀 VECTA BOOTSTRAP COMPLETE: Enclave is Secure and Sovereign.")
 	},
-}
-
-func verifySovereignty() {
-	fmt.Println("⏳ Step 2d: Verifying Identity Sovereignty...")
-
-	// We wait for the Pod to be 'Running'. This is the most stable K8s-native check.
-	for i := 1; i <= 60; i++ {
-		checkCmd := "/usr/local/bin/k3s kubectl get pods -n spire spire-server-0 -o jsonpath='{.status.phase}' 2>/dev/null"
-		out, _ := exec.Command("sh", "-c", checkCmd).Output()
-
-		if strings.TrimSpace(string(out)) == "Running" {
-			// Once Running, we give SPIRE 10 seconds to generate its initial RSA keys and open its socket
-			time.Sleep(10 * time.Second)
-			fmt.Println("✅ SPIRE Identity Server is Active.")
-			return
-		}
-
-		fmt.Printf("   🔍 Attempt %d/60: Waiting for identity container... \r", i)
-		time.Sleep(2 * time.Second)
-	}
-
-	fmt.Println("\n❌ FATAL: Identity Layer failed to start.")
-	os.Exit(1)
 }
 
 func syncKubeconfig() {
@@ -136,35 +112,78 @@ func initializeVectaWorkspace() {
 	_ = runShell("sudo mkdir -p /usr/local/vecta/policy /usr/local/vecta/bin /usr/local/vecta/lib")
 }
 
-// Inside vectaInitCmd:
-
 func init() {
 	vectaInitCmd.Flags().BoolVarP(&forceInit, "force", "f", false, "Force nuclear scrub")
 	rootCmd.AddCommand(vectaInitCmd)
 }
 
-// MOVE THIS FUNCTION LATER INTO A SEPARATE FILE like register.go or utils.go etc.
-//
-// registerVclusterIdentity bridges the host SPIRE server to a specific vCluster tenant.
+func verifySovereignty() {
+	fmt.Println("⏳ Step 2d: Verifying Identity Sovereignty...")
+
+	for i := 1; i <= 60; i++ {
+		// CHANGED: Check for 'Ready' condition, not just 'Running' phase
+		checkCmd := "/usr/local/bin/k3s kubectl get pods -n spire spire-server-0 -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null"
+		out, _ := exec.Command("sh", "-c", checkCmd).Output()
+
+		if strings.TrimSpace(string(out)) == "true" {
+			// Give the process 5 more seconds to initialize its socket
+			time.Sleep(5 * time.Second)
+			fmt.Println("\n✅ SPIRE Identity Server is Active and Ready.")
+			return
+		}
+
+		fmt.Printf("   🔍 Attempt %d/60: Waiting for identity readiness... \r", i)
+		time.Sleep(2 * time.Second)
+	}
+
+	fmt.Println("\n❌ FATAL: Identity Layer failed to reach Ready state.")
+	os.Exit(1)
+}
+
 func registerVclusterIdentity(vclusterName string, namespace string) error {
 	fmt.Printf("🪪  Mapping Sovereign Identity for enclave: %s\n", vclusterName)
 
 	parentID := "spiffe://vecta.io/node/rtx6000-primary"
 	spiffeID := fmt.Sprintf("spiffe://vecta.io/enclave/%s", vclusterName)
 
-	// Step A: Ensure the Parent Node Entry exists (The "Attestation Foundation")
-	// We run this with a 'create'—if it fails because it exists, we move on.
-	nodeCmd := []string{
-		"/usr/local/bin/k3s", "kubectl", "exec", "-n", "spire", "spire-server-0", "-c", "spire-server", "--",
-		"/opt/spire/bin/spire-server", "entry", "create",
-		"-spiffeID", parentID,
-		"-selector", "k8s_psat:cluster:default",
-		"-selector", "k8s_psat:agent_ns:spire",
-		"-node",
-	}
-	_ = exec.Command(nodeCmd[0], nodeCmd[1:]...).Run()
+	// Step A: Retry loop for the "Connection Upgrade"
+	// This gives the spire-server process time to initialize its internal listeners
+	var nodeErr bytes.Buffer
+	success := false
 
-	// Step B: Create the Tenant Workload Entry
+	fmt.Println("   ⏳ Finalizing Identity Handshake...")
+	for i := 0; i < 5; i++ {
+		nodeCmd := []string{
+			"/usr/local/bin/k3s", "kubectl", "exec", "-n", "spire", "spire-server-0", "-c", "spire-server", "--",
+			"/opt/spire/bin/spire-server", "entry", "create",
+			"-spiffeID", parentID,
+			"-selector", "k8s_psat:cluster:default",
+			"-selector", "k8s_psat:agent_ns:spire",
+			"-node",
+		}
+
+		nodeErr.Reset()
+		cmd := exec.Command(nodeCmd[0], nodeCmd[1:]...)
+		cmd.Stderr = &nodeErr
+
+		if err := cmd.Run(); err == nil || strings.Contains(nodeErr.String(), "already exists") {
+			success = true
+			break
+		}
+
+		// If it's the "connection upgrade" error, wait and retry
+		if strings.Contains(nodeErr.String(), "unable to upgrade connection") {
+			time.Sleep(15 * time.Second)
+			continue
+		}
+		return fmt.Errorf("node registration failed: %s", nodeErr.String())
+	}
+
+	if !success {
+		return fmt.Errorf("node registration timed out: %s", nodeErr.String())
+	}
+
+	// Step B: Create the Tenant Workload Entry (Workload entry usually succeeds if Node does)
 	workloadCmd := []string{
 		"/usr/local/bin/k3s", "kubectl", "exec", "-n", "spire", "spire-server-0", "-c", "spire-server", "--",
 		"/opt/spire/bin/spire-server", "entry", "create",
@@ -174,16 +193,11 @@ func registerVclusterIdentity(vclusterName string, namespace string) error {
 		"-selector", "k8s:sa:default",
 	}
 
-	var stderr bytes.Buffer
-	cmd := exec.Command(workloadCmd[0], workloadCmd[1:]...)
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		if strings.Contains(stderr.String(), "already exists") {
-			fmt.Printf("ℹ️  Identity path %s is already active.\n", spiffeID)
-			return nil
-		}
-		return fmt.Errorf("identity mapping failed: %s", stderr.String())
+	var workloadErr bytes.Buffer
+	wCmd := exec.Command(workloadCmd[0], workloadCmd[1:]...)
+	wCmd.Stderr = &workloadErr
+	if err := wCmd.Run(); err != nil && !strings.Contains(workloadErr.String(), "already exists") {
+		return fmt.Errorf("identity mapping failed: %s", workloadErr.String())
 	}
 
 	fmt.Printf("✅ Identity Linked: %s -> %s\n", spiffeID, parentID)

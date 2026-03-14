@@ -66,13 +66,16 @@ workspace:
 	@echo "V3.0.0" | sudo tee $(VECTA_ROOT)/version/current > /dev/null
 
 # 2. Build the unified binary (CLI + API) - Depends on spire-assets
-build: spire-assets
+build:
 	@echo "🪪  Preparing Sovereign SPIRE Identity Assets..."
 	@mkdir -p $(BUILD_DIR)/$(SPIRE_DIR)
 	@cp $(SPIRE_DIR)/configmap.yaml $(BUILD_DIR)/$(SPIRE_DIR)/ 2>/dev/null || true
 	@cp $(SPIRE_DIR)/spire-server-sovereign.yaml $(BUILD_DIR)/$(SPIRE_DIR)/ 2>/dev/null || true
 	sudo docker build -t $(SPIRE_IMAGE) ./$(SPIRE_DIR)
 	sudo docker save $(SPIRE_IMAGE) | sudo /usr/local/bin/k3s ctr -n k8s.io images import -
+	@echo "🏗️  Compiling Vecta Unified Binary..."
+	go build -o $(BUILD_DIR)/$(BINARY_NAME) ./main.go
+	sudo chmod +x $(BUILD_DIR)/$(BINARY_NAME)
 
 # 3. Build the Sentry Warden and the Docker Image
 build-sentry:
