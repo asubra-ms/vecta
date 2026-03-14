@@ -41,6 +41,15 @@ spec:
       labels:
         app: spire-server
     spec:
+      initContainers:
+        - name: fix-permissions
+          image: busybox:1.28
+          command: ["sh", "-c", "chown -R 1000:1000 /run/spire/data /run/spire/bundle"]
+          volumeMounts:
+            - name: spire-data
+              mountPath: /run/spire/data
+            - name: spire-bundle
+              mountPath: /run/spire/bundle
       serviceAccountName: spire-server
       containers:
       - name: spire-server

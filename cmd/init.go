@@ -155,7 +155,7 @@ func registerVclusterIdentity(vclusterName string, namespace string) error {
 	// Step A: Ensure the Parent Node Entry exists (The "Attestation Foundation")
 	// We run this with a 'create'—if it fails because it exists, we move on.
 	nodeCmd := []string{
-		"/usr/local/bin/k3s", "kubectl", "exec", "-n", "spire", "spire-server-0", "--",
+		"/usr/local/bin/k3s", "kubectl", "exec", "-n", "spire", "spire-server-0", "-c", "spire-server", "--",
 		"/opt/spire/bin/spire-server", "entry", "create",
 		"-spiffeID", parentID,
 		"-selector", "k8s_psat:cluster:default",
@@ -166,7 +166,7 @@ func registerVclusterIdentity(vclusterName string, namespace string) error {
 
 	// Step B: Create the Tenant Workload Entry
 	workloadCmd := []string{
-		"/usr/local/bin/k3s", "kubectl", "exec", "-n", "spire", "spire-server-0", "--",
+		"/usr/local/bin/k3s", "kubectl", "exec", "-n", "spire", "spire-server-0", "-c", "spire-server", "--",
 		"/opt/spire/bin/spire-server", "entry", "create",
 		"-spiffeID", spiffeID,
 		"-parentID", parentID,
