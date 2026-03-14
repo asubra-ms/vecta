@@ -29,6 +29,11 @@ data:
         }
       }
       KeyManager "memory" {}
+      Notifier "k8sbundle" {
+        plugin_data {
+          bundle_path = "/run/spire/bundle/bundle.crt"
+        }
+      }
     }
 ---
 apiVersion: v1
@@ -52,4 +57,3 @@ data:
       KeyManager "memory" {}
       WorkloadAttestor "k8s" { plugin_data { skip_kubelet_verification = true } }
     }
-
